@@ -1,0 +1,17 @@
+---
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineRun
+metadata:
+  generateName: build-and-deploy-run-
+spec:
+  pipelineRef:
+    name: build-and-deploy
+  workspaces:
+    - name: local-maven-repo
+      persistentVolumeClaim:
+        claimName: maven-repo-pvc
+  resources:
+    - name: issfinder-git
+      resourceRef:
+        name: issfinder-git
+  serviceAccountName: pipeline

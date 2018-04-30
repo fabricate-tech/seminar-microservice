@@ -1,0 +1,167 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: maven-repo-pvc
+spec:
+  resources:
+    requests:
+      storage: 5Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+---
+kind: BuildConfig
+apiVersion: build.openshift.io/v1
+metadata:
+  name: issfinder
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: 'issfinder:latest'
+  strategy:
+    type: Source
+    sourceStrategy:
+      from:
+        kind: ImageStreamTag
+        namespace: openshift
+        name: 'java:11'
+  source:
+    type: Binary
+    binary: {}
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: issfinder
+---
+kind: BuildConfig
+apiVersion: build.openshift.io/v1
+metadata:
+  name: issfinder-dev-site
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: 'issfinder-dev-site:latest'
+  strategy:
+    type: Source
+    sourceStrategy:
+      from:
+        kind: ImageStreamTag
+        namespace: openshift
+        name: 'nginx:latest'
+  source:
+    type: Binary
+    binary: {}
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: issfinder-dev-site
+---
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
+metadata:
+  name: issfinder-dev-site
+spec:
+  selector:
+    app: issfinder-dev-site
+  replicas: 1
+  template:
+    triggers:
+      - type: ImageChange
+        imageChangeParams:
+          automatic: true
+          containerNames: ["issfinder-dev-site"]
+        from:
+          kind: ImageStreamTag
+          name: 'issfinder-dev-site:latest'
+    metadata:
+      labels:
+        app: issfinder-dev-site
+    spec:
+      containers:
+        - name: issfinder-dev-site
+          image: 'image-registry.openshift-image-registry.svc:5000/issfinder/issfinder-dev-site:latest'
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: issfinder-dev-site
+spec:
+  selector:
+    app: issfinder-dev-site
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: issfinder-dev-site
+spec:
+  to:
+    kind: Service
+    name: issfinder-dev-site
+  port:
+    targetPort: 8080
+  wildcardPolicy: None
+---
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
+metadata:
+  name: issfinder
+spec:
+  selector:
+    app: issfinder
+  replicas: 1
+  template:
+    triggers:
+      - type: ImageChange
+        imageChangeParams:
+          automatic: true
+          containerNames: ["issfinder"]
+        from:
+          kind: ImageStreamTag
+          name: 'issfinder:latest'
+    metadata:
+      labels:
+        app: issfinder
+    spec:
+      containers:
+        - name: issfinder
+          image: 'image-registry.openshift-image-registry.svc:5000/issfinder/issfinder:latest'
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: issfinder
+spec:
+  selector:
+    app: issfinder
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: issfinder
+spec:
+  to:
+    kind: Service
+    name: issfinder
+  port:
+    targetPort: 8080
+  wildcardPolicy: None

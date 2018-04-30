@@ -1,0 +1,106 @@
+---
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: issfinder-git
+spec:
+  params:
+    - name: url
+      value: 'https://github.com/codelair-io/seminar-microservice.git'
+  type: git
+---
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: oc-cli
+spec:
+  workspaces:
+    - name: maven-repo
+  inputs:
+    params:
+      - name: SCRIPT
+        description: The OpenShift CLI arguments to run
+        type: string
+        default: "oc $@"
+      - name: ARGS
+        description: The OpenShift CLI arguments to run
+        type: array
+  steps:
+    - name: oc
+      image: quay.io/openshift/origin-cli:latest
+      script: "$(inputs.params.SCRIPT)"
+      args:
+        - "$(inputs.params.ARGS)"
+---
+apiVersion: tekton.dev/v1alpha1
+kind: Task
+metadata:
+  name: mvn
+spec:
+  workspaces:
+    - name: maven-repo
+      mountPath: /workspace/source/target
+  inputs:
+    params:
+      - name: GOALS
+        description: The Maven goals to run
+        type: array
+        default: ["package"]
+    resources:
+      - name: source
+        type: git
+  steps:
+    - name: mvn
+      image: maven:3-jdk-11
+      workingDir: /workspace/source
+      command: ["/usr/bin/mvn"]
+      args:
+        - "-Dmaven.repo.local=/tmp"
+        - "$(inputs.params.GOALS)"
+---
+apiVersion: tekton.dev/v1alpha1
+kind: Pipeline
+metadata:
+  name: build-and-deploy
+spec:
+  workspaces:
+    - name: local-maven-repo
+  resources:
+    - name: issfinder-git
+      type: git
+  tasks:
+    - name: build
+      taskRef:
+        name: mvn
+      resources:
+        inputs:
+          - name: source
+            resource: issfinder-git
+      params:
+        - name: GOALS
+          value: ["package", "site"]
+      workspaces:
+        - name: maven-repo
+          workspace: local-maven-repo
+    - name: trigger-s2i
+      taskRef:
+        name: oc-cli
+      params:
+        - name: ARGS
+          value: ["start-build", "issfinder", "--from-file=$(workspaces.maven-repo.path)/microservice.jar"]
+      workspaces:
+        - name: maven-repo
+          workspace: local-maven-repo
+      runAfter:
+        - build
+    - name: build-dev-site
+      taskRef:
+        name: oc-cli
+      params:
+        - name: ARGS
+          value: ["start-build", "issfinder-dev-site", "--from-dir=$(workspaces.maven-repo.path)/site"]
+      workspaces:
+        - name: maven-repo
+          workspace: local-maven-repo
+      runAfter:
+        - trigger-s2i
